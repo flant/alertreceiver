@@ -118,17 +118,31 @@ func (h *Handler) HandlePrometheus(w http.ResponseWriter, r *http.Request) {
 			"timestamp": time.Now().Format(time.RFC3339),
 		})
 
+		madisonPayload := map[string]interface{}{
+			"labels": map[string]string{
+				"trigger":        trigger,
+				"severity_level": severityLevel,
+			},
+			"annotations": map[string]string{
+				"summary":     summary,
+				"description": description,
+			},
+		}
+		madisonPayloadJSON, _ := json.Marshal(madisonPayload)
+
 		if err := h.madisonClient.SendAlert(trigger, severityLevel, summary, description); err != nil {
 			h.logger.Error("failed to send alert to madison", log.Fields{
 				"error":     err.Error(),
 				"alertName": alertName,
 				"trigger":   trigger,
+				"payload":   string(madisonPayloadJSON),
 				"timestamp": time.Now().Format(time.RFC3339),
 			})
 		} else {
 			h.logger.Info("alert sent to madison", log.Fields{
 				"alertName": alertName,
 				"trigger":   trigger,
+				"payload":   string(madisonPayloadJSON),
 				"timestamp": time.Now().Format(time.RFC3339),
 			})
 		}
@@ -142,6 +156,10 @@ func buildDescription(alert Alert, webhook AlertmanagerWebhook) string {
 
 	if desc := alert.Annotations["description"]; desc != "" {
 		parts = append(parts, desc)
+	}
+
+	if dashboard := alert.Annotations["dashboard"]; dashboard != "" {
+		parts = append(parts, dashboard)
 	}
 
 	if url := alert.GeneratorURL; url != "" {
