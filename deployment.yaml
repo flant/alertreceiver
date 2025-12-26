@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertreceiver
+  labels:
+    app: alertreceiver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertreceiver
+  template:
+    metadata:
+      labels:
+        app: alertreceiver
+    spec:
+      containers:
+      - name: alertreceiver
+        image: alertreceiver:latest
+        ports:
+        - containerPort: 80
+          name: http
+        env:
+        - name: MADISON_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: alertreceiver-secrets
+              key: madison-api-key
+        - name: MADISON_URL
+          value: "https://madison.flant.com/api/events/custom/%s"
+        - name: DMS
+          value: "AlertReceiver"
+        - name: PORT
+          value: "80"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+
