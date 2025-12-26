@@ -1,0 +1,37 @@
+{
+  "version": "4",
+  "groupKey": "{}:{alertname=\"HighErrorRate\"}",
+  "status": "firing",
+  "receiver": "madison",
+  "groupLabels": {
+    "alertname": "HighErrorRate"
+  },
+  "commonLabels": {
+    "alertname": "HighErrorRate",
+    "severity": "critical"
+  },
+  "commonAnnotations": {
+    "summary": "High error rate detected"
+  },
+  "externalURL": "http://alertmanager:9093",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "HighErrorRate",
+        "severity": "critical",
+        "instance": "example-service:8080",
+        "job": "example"
+      },
+      "annotations": {
+        "summary": "Количество ошибок за 1 минуту превысило 400 и держится 2 минуты.",
+        "description": "Количество ошибок за 1 минуту превысило 400 и держится 2 минуты."
+      },
+      "startsAt": "2025-12-26T10:00:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "https://grafana.r-ulybka.ru/d/ceg46tk3qlh4wf/requests?orgId=1&from=now-6h&to=now&viewPanel=6"
+    }
+  ]
+}
+
+
