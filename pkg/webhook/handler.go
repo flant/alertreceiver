@@ -100,6 +100,11 @@ func (h *Handler) HandlePrometheus(w http.ResponseWriter, r *http.Request) {
 
 		description := buildDescription(alert, webhook)
 
+		grafanaURL := alert.Annotations["dashboard"]
+		if grafanaURL == "" {
+			grafanaURL = alert.GeneratorURL
+		}
+
 		trigger := alertName
 
 		alertStatus := alert.Status
@@ -125,6 +130,8 @@ func (h *Handler) HandlePrometheus(w http.ResponseWriter, r *http.Request) {
 			"labels": map[string]string{
 				"trigger":        trigger,
 				"severity_level": severityLevel,
+				"alertreceiver":  "alertreceiver",
+				"grafana":        grafanaURL,
 			},
 			"annotations": map[string]string{
 				"summary":     summary,
@@ -133,7 +140,7 @@ func (h *Handler) HandlePrometheus(w http.ResponseWriter, r *http.Request) {
 		}
 		madisonPayloadJSON, _ := json.Marshal(madisonPayload)
 
-		if err := h.madisonClient.SendAlert(trigger, severityLevel, summary, description); err != nil {
+		if err := h.madisonClient.SendAlert(trigger, severityLevel, summary, description, grafanaURL); err != nil {
 			h.logger.Error("failed to send alert to madison", log.Fields{
 				"error":     err.Error(),
 				"alertName": alertName,
@@ -158,6 +165,7 @@ func buildDescription(alert Alert, webhook AlertmanagerWebhook) string {
 	var parts []string
 
 	if desc := alert.Annotations["description"]; desc != "" {
+		desc = removeEmojis(desc)
 		parts = append(parts, desc)
 	}
 
@@ -174,6 +182,30 @@ func buildDescription(alert Alert, webhook AlertmanagerWebhook) string {
 	}
 
 	return strings.Join(parts, "\n\n")
+}
+
+func removeEmojis(s string) string {
+	var result strings.Builder
+	for _, r := range s {
+		if !isEmoji(r) {
+			result.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(result.String())
+}
+
+func isEmoji(r rune) bool {
+	return (r >= 0x1F600 && r <= 0x1F64F) ||
+		(r >= 0x1F300 && r <= 0x1F5FF) ||
+		(r >= 0x1F680 && r <= 0x1F6FF) ||
+		(r >= 0x1F1E0 && r <= 0x1F1FF) ||
+		(r >= 0x2600 && r <= 0x26FF) ||
+		(r >= 0x2700 && r <= 0x27BF) ||
+		(r >= 0xFE00 && r <= 0xFE0F) ||
+		(r >= 0x1F900 && r <= 0x1F9FF) ||
+		(r >= 0x1FA00 && r <= 0x1FA6F) ||
+		r == 0x200D ||
+		r == 0xFE0F
 }
 
 func mapSeverityToLevel(severity string) string {

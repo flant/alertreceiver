@@ -25,6 +25,8 @@ type Alert struct {
 type Labels struct {
 	Trigger       string `json:"trigger"`
 	SeverityLevel string `json:"severity_level"`
+	AlertReceiver string `json:"alertreceiver,omitempty"`
+	Grafana       string `json:"grafana,omitempty"`
 }
 
 type Annotations struct {
@@ -51,11 +53,13 @@ func NewClient(cfg *config.Config) *Client {
 	}
 }
 
-func (c *Client) SendAlert(trigger, severity, summary, description string) error {
+func (c *Client) SendAlert(trigger, severity, summary, description, grafana string) error {
 	payload := Alert{
 		Labels: Labels{
 			Trigger:       trigger,
 			SeverityLevel: severity,
+			AlertReceiver: "alertreceiver",
+			Grafana:       grafana,
 		},
 		Annotations: Annotations{
 			Summary:     summary,
