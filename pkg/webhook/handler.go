@@ -105,6 +105,9 @@ func (h *Handler) HandlePrometheus(w http.ResponseWriter, r *http.Request) {
 		alertStatus := alert.Status
 		if alertStatus == "resolved" {
 			trigger = trigger + "_Resolved"
+			if !strings.Contains(strings.ToLower(summary), "resolved") && !strings.Contains(strings.ToLower(summary), "решено") {
+				summary = "✅ Resolved: " + summary
+			}
 		}
 
 		alertJSON, _ := json.Marshal(alert)
