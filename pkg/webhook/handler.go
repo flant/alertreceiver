@@ -1,10 +1,15 @@
 package webhook
 
 import (
+	"context"
+	"crypto/md5"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"alertreceiver/pkg/logging"
@@ -17,6 +22,16 @@ type Handler struct {
 	madisonClient *madison.Client
 	logger        *logging.Logger
 	dms           string
+	activeAlerts  map[string]context.CancelFunc
+	mu            sync.RWMutex
+}
+
+type activeAlertData struct {
+	trigger       string
+	severityLevel string
+	summary       string
+	description   string
+	grafanaURL    string
 }
 
 type AlertmanagerWebhook struct {
@@ -45,6 +60,7 @@ func NewHandler(madisonClient *madison.Client, logger *logging.Logger, dms strin
 		madisonClient: madisonClient,
 		logger:        logger,
 		dms:           dms,
+		activeAlerts:  make(map[string]context.CancelFunc),
 	}
 }
 
@@ -81,6 +97,8 @@ func (h *Handler) HandlePrometheus(w http.ResponseWriter, r *http.Request) {
 	})
 
 	for _, alert := range webhook.Alerts {
+		alertKey := h.getAlertKey(webhook.CommonLabels)
+
 		alertName := alert.Labels["alertname"]
 		if alertName == "" {
 			alertName = "Unknown"
@@ -109,52 +127,38 @@ func (h *Handler) HandlePrometheus(w http.ResponseWriter, r *http.Request) {
 
 		alertStatus := alert.Status
 		if alertStatus == "resolved" {
-			trigger = trigger + "_Resolved"
-			if !strings.Contains(strings.ToLower(summary), "resolved") && !strings.Contains(strings.ToLower(summary), "решено") {
-				summary = "✅ Resolved: " + summary
+			alertJSON, _ := json.Marshal(alert)
+			h.logger.Info("processing resolved alert", log.Fields{
+				"alertName": alertName,
+				"status":    alertStatus,
+				"severity":  severity,
+				"alertKey":  alertKey,
+				"alert":     string(alertJSON),
+				"timestamp": time.Now().Format(time.RFC3339),
+			})
+
+			h.stopAlert(alertKey)
+		} else if alertStatus == "firing" {
+			alertJSON, _ := json.Marshal(alert)
+			h.logger.Info("processing firing alert", log.Fields{
+				"alertName": alertName,
+				"status":    alertStatus,
+				"severity":  severity,
+				"trigger":   trigger,
+				"alertKey":  alertKey,
+				"alert":     string(alertJSON),
+				"timestamp": time.Now().Format(time.RFC3339),
+			})
+
+			alertData := activeAlertData{
+				trigger:       trigger,
+				severityLevel: severityLevel,
+				summary:       summary,
+				description:   description,
+				grafanaURL:    grafanaURL,
 			}
-		}
 
-		alertJSON, _ := json.Marshal(alert)
-		h.logger.Info("processing alert", log.Fields{
-			"alertName": alertName,
-			"status":    alertStatus,
-			"severity":  severity,
-			"trigger":   trigger,
-			"summary":   summary,
-			"alert":     string(alertJSON),
-			"timestamp": time.Now().Format(time.RFC3339),
-		})
-
-		madisonPayload := map[string]interface{}{
-			"labels": map[string]string{
-				"trigger":        trigger,
-				"severity_level": severityLevel,
-				"alertreceiver":  "alertreceiver",
-				"grafana":        grafanaURL,
-			},
-			"annotations": map[string]string{
-				"summary":     summary,
-				"description": description,
-			},
-		}
-		madisonPayloadJSON, _ := json.Marshal(madisonPayload)
-
-		if err := h.madisonClient.SendAlert(trigger, severityLevel, summary, description, grafanaURL); err != nil {
-			h.logger.Error("failed to send alert to madison", log.Fields{
-				"error":     err.Error(),
-				"alertName": alertName,
-				"trigger":   trigger,
-				"payload":   string(madisonPayloadJSON),
-				"timestamp": time.Now().Format(time.RFC3339),
-			})
-		} else {
-			h.logger.Info("alert sent to madison", log.Fields{
-				"alertName": alertName,
-				"trigger":   trigger,
-				"payload":   string(madisonPayloadJSON),
-				"timestamp": time.Now().Format(time.RFC3339),
-			})
+			h.startAlert(alertKey, alertData)
 		}
 	}
 
@@ -225,6 +229,101 @@ func mapSeverityToLevel(severity string) string {
 func (h *Handler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
+}
+
+func (h *Handler) getAlertKey(labels map[string]string) string {
+	var keys []string
+	for k, v := range labels {
+		keys = append(keys, fmt.Sprintf("%s=%s", k, v))
+	}
+	sort.Strings(keys)
+	keyString := strings.Join(keys, ",")
+	hash := md5.Sum([]byte(keyString))
+	return fmt.Sprintf("%x", hash)
+}
+
+func (h *Handler) startAlert(alertKey string, alertData activeAlertData) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if cancel, exists := h.activeAlerts[alertKey]; exists {
+		cancel()
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	h.activeAlerts[alertKey] = cancel
+
+	h.sendAlertOnce(alertData)
+
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				h.logger.Info("stopped sending alert", log.Fields{
+					"alertKey":  alertKey,
+					"trigger":   alertData.trigger,
+					"timestamp": time.Now().Format(time.RFC3339),
+				})
+				return
+			case <-ticker.C:
+				h.sendAlertOnce(alertData)
+			}
+		}
+	}()
+
+	h.logger.Info("started periodic alert sending", log.Fields{
+		"alertKey":  alertKey,
+		"trigger":   alertData.trigger,
+		"timestamp": time.Now().Format(time.RFC3339),
+	})
+}
+
+func (h *Handler) stopAlert(alertKey string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if cancel, exists := h.activeAlerts[alertKey]; exists {
+		cancel()
+		delete(h.activeAlerts, alertKey)
+		h.logger.Info("stopped alert", log.Fields{
+			"alertKey":  alertKey,
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
+	}
+}
+
+func (h *Handler) sendAlertOnce(alertData activeAlertData) {
+	madisonPayload := map[string]interface{}{
+		"labels": map[string]string{
+			"trigger":        alertData.trigger,
+			"severity_level": alertData.severityLevel,
+			"alertreceiver":  "alertreceiver",
+			"grafana":        alertData.grafanaURL,
+		},
+		"annotations": map[string]string{
+			"summary":     alertData.summary,
+			"description": alertData.description,
+		},
+	}
+	madisonPayloadJSON, _ := json.Marshal(madisonPayload)
+
+	if err := h.madisonClient.SendAlert(alertData.trigger, alertData.severityLevel, alertData.summary, alertData.description, alertData.grafanaURL); err != nil {
+		h.logger.Error("failed to send alert to madison", log.Fields{
+			"error":     err.Error(),
+			"trigger":   alertData.trigger,
+			"payload":   string(madisonPayloadJSON),
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
+	} else {
+		h.logger.Info("alert sent to madison", log.Fields{
+			"trigger":   alertData.trigger,
+			"payload":   string(madisonPayloadJSON),
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
+	}
 }
 
 func (h *Handler) SendDMS() {
