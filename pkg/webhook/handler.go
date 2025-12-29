@@ -32,6 +32,7 @@ type activeAlertData struct {
 	summary       string
 	description   string
 	grafanaURL    string
+	commonLabels  map[string]string
 }
 
 type AlertmanagerWebhook struct {
@@ -296,7 +297,7 @@ func (h *Handler) stopAlert(alertKey string) {
 }
 
 func (h *Handler) sendAlertOnce(alertData activeAlertData) {
-	if err := h.madisonClient.SendAlert(alertData.trigger, alertData.severityLevel, alertData.summary, alertData.description, alertData.grafanaURL); err != nil {
+	if err := h.madisonClient.SendAlert(alertData.trigger, alertData.severityLevel, alertData.summary, alertData.description, alertData.grafanaURL, alertData.commonLabels); err != nil {
 		h.logger.Error("failed to send alert to madison", log.Fields{
 			"error":     err.Error(),
 			"trigger":   alertData.trigger,

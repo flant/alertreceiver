@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"alertreceiver/pkg/config"
@@ -22,12 +23,7 @@ type Alert struct {
 	Annotations Annotations `json:"annotations"`
 }
 
-type Labels struct {
-	Trigger       string `json:"trigger"`
-	SeverityLevel string `json:"severity_level"`
-	AlertReceiver string `json:"alertreceiver,omitempty"`
-	Grafana       string `json:"grafana,omitempty"`
-}
+type Labels map[string]string
 
 type Annotations struct {
 	Summary     string `json:"summary"`
@@ -53,14 +49,38 @@ func NewClient(cfg *config.Config) *Client {
 	}
 }
 
-func (c *Client) SendAlert(trigger, severity, summary, description, grafana string) error {
+func (c *Client) SendAlert(trigger, severity, summary, description, grafana string, commonLabels map[string]string) error {
+	labels := make(Labels)
+
+	for k, v := range commonLabels {
+		labels[k] = v
+	}
+
+	severityLevel := severity
+	if severityLevel != "" {
+		level, err := strconv.Atoi(severityLevel)
+		if err == nil {
+			level++
+			if level > 5 {
+				level = 5
+			}
+			severityLevel = strconv.Itoa(level)
+		} else {
+			severityLevel = "5"
+		}
+	} else {
+		severityLevel = "5"
+	}
+
+	labels["trigger"] = trigger
+	labels["severity_level"] = severityLevel
+	labels["alertreceiver"] = "alertreceiver"
+	if grafana != "" {
+		labels["grafana"] = grafana
+	}
+
 	payload := Alert{
-		Labels: Labels{
-			Trigger:       trigger,
-			SeverityLevel: severity,
-			AlertReceiver: "alertreceiver",
-			Grafana:       grafana,
-		},
+		Labels: labels,
 		Annotations: Annotations{
 			Summary:     summary,
 			Description: description,
