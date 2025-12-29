@@ -49,10 +49,10 @@ func NewClient(cfg *config.Config) *Client {
 	}
 }
 
-func (c *Client) SendAlert(trigger, severity, summary, description, grafana string, commonLabels map[string]string) error {
+func (c *Client) SendAlert(trigger, severity, summary, description, grafana string, alertLabels map[string]string) error {
 	labels := make(Labels)
 
-	for k, v := range commonLabels {
+	for k, v := range alertLabels {
 		labels[k] = v
 	}
 

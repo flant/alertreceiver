@@ -32,7 +32,7 @@ type activeAlertData struct {
 	summary       string
 	description   string
 	grafanaURL    string
-	commonLabels  map[string]string
+	labels        map[string]string
 }
 
 type AlertmanagerWebhook struct {
@@ -98,7 +98,7 @@ func (h *Handler) HandlePrometheus(w http.ResponseWriter, r *http.Request) {
 	})
 
 	for _, alert := range webhook.Alerts {
-		alertKey := h.getAlertKey(webhook.CommonLabels)
+		alertKey := h.getAlertKey(alert.Labels)
 
 		alertName := alert.Labels["alertname"]
 		if alertName == "" {
@@ -151,9 +151,9 @@ func (h *Handler) HandlePrometheus(w http.ResponseWriter, r *http.Request) {
 				"timestamp": time.Now().Format(time.RFC3339),
 			})
 
-			commonLabelsCopy := make(map[string]string)
-			for k, v := range webhook.CommonLabels {
-				commonLabelsCopy[k] = v
+			labelsCopy := make(map[string]string)
+			for k, v := range alert.Labels {
+				labelsCopy[k] = v
 			}
 
 			alertData := activeAlertData{
@@ -162,7 +162,7 @@ func (h *Handler) HandlePrometheus(w http.ResponseWriter, r *http.Request) {
 				summary:       summary,
 				description:   description,
 				grafanaURL:    grafanaURL,
-				commonLabels:  commonLabelsCopy,
+				labels:        labelsCopy,
 			}
 
 			h.startAlert(alertKey, alertData)
@@ -253,8 +253,8 @@ func (h *Handler) startAlert(alertKey string, alertData activeAlertData) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if cancel, exists := h.activeAlerts[alertKey]; exists {
-		cancel()
+	if _, exists := h.activeAlerts[alertKey]; exists {
+		return
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -308,7 +308,7 @@ func (h *Handler) stopAlert(alertKey string) {
 }
 
 func (h *Handler) sendAlertOnce(alertData activeAlertData) {
-	if err := h.madisonClient.SendAlert(alertData.trigger, alertData.severityLevel, alertData.summary, alertData.description, alertData.grafanaURL, alertData.commonLabels); err != nil {
+	if err := h.madisonClient.SendAlert(alertData.trigger, alertData.severityLevel, alertData.summary, alertData.description, alertData.grafanaURL, alertData.labels); err != nil {
 		h.logger.Error("failed to send alert to madison", log.Fields{
 			"error":     err.Error(),
 			"trigger":   alertData.trigger,
