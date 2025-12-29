@@ -262,7 +262,7 @@ func (h *Handler) startAlert(alertKey string, alertData activeAlertData) {
 		for {
 			select {
 			case <-ctx.Done():
-				h.logger.Info("stopped sending alert", log.Fields{
+				h.logger.Info("stopped periodic alert sending", log.Fields{
 					"alertKey":  alertKey,
 					"trigger":   alertData.trigger,
 					"timestamp": time.Now().Format(time.RFC3339),
@@ -296,31 +296,10 @@ func (h *Handler) stopAlert(alertKey string) {
 }
 
 func (h *Handler) sendAlertOnce(alertData activeAlertData) {
-	madisonPayload := map[string]interface{}{
-		"labels": map[string]string{
-			"trigger":        alertData.trigger,
-			"severity_level": alertData.severityLevel,
-			"alertreceiver":  "alertreceiver",
-			"grafana":        alertData.grafanaURL,
-		},
-		"annotations": map[string]string{
-			"summary":     alertData.summary,
-			"description": alertData.description,
-		},
-	}
-	madisonPayloadJSON, _ := json.Marshal(madisonPayload)
-
 	if err := h.madisonClient.SendAlert(alertData.trigger, alertData.severityLevel, alertData.summary, alertData.description, alertData.grafanaURL); err != nil {
 		h.logger.Error("failed to send alert to madison", log.Fields{
 			"error":     err.Error(),
 			"trigger":   alertData.trigger,
-			"payload":   string(madisonPayloadJSON),
-			"timestamp": time.Now().Format(time.RFC3339),
-		})
-	} else {
-		h.logger.Info("alert sent to madison", log.Fields{
-			"trigger":   alertData.trigger,
-			"payload":   string(madisonPayloadJSON),
 			"timestamp": time.Now().Format(time.RFC3339),
 		})
 	}
