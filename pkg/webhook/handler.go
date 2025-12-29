@@ -293,6 +293,11 @@ func (h *Handler) stopAlert(alertKey string) {
 			"alertKey":  alertKey,
 			"timestamp": time.Now().Format(time.RFC3339),
 		})
+	} else {
+		h.logger.Info("resolved alert received but no active alert found", log.Fields{
+			"alertKey":  alertKey,
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
 	}
 }
 
