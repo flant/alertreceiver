@@ -75,9 +75,6 @@ func (c *Client) SendAlert(trigger, severity, summary, description, grafana stri
 	labels["trigger"] = trigger
 	labels["severity_level"] = severityLevel
 	labels["alertreceiver"] = "alertreceiver"
-	if grafana != "" {
-		labels["grafana"] = grafana
-	}
 
 	payload := Alert{
 		Labels: labels,
