@@ -151,12 +151,18 @@ func (h *Handler) HandlePrometheus(w http.ResponseWriter, r *http.Request) {
 				"timestamp": time.Now().Format(time.RFC3339),
 			})
 
+			commonLabelsCopy := make(map[string]string)
+			for k, v := range webhook.CommonLabels {
+				commonLabelsCopy[k] = v
+			}
+
 			alertData := activeAlertData{
 				trigger:       trigger,
 				severityLevel: severityLevel,
 				summary:       summary,
 				description:   description,
 				grafanaURL:    grafanaURL,
+				commonLabels:  commonLabelsCopy,
 			}
 
 			h.startAlert(alertKey, alertData)
